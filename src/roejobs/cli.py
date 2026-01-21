@@ -27,7 +27,10 @@ from urllib.request import Request, urlopen
 from .utils import parse_job_spec, parse_task_file  # adjust import
 
 
-def ensure_server_running(server_cmd: list[str], server_url="http://127.0.0.1:5678", timeout=10):
+def ensure_server_running(server_cmd: list[str],
+                          server_url="http://127.0.0.1:5678",
+                          timeout=10,
+                          n_processes=10):
     """
     Check if server is alive; if not, start it as a detached process.
     `server_cmd` should be e.g. ["python", "-m", "roejobs.server"]
@@ -43,7 +46,7 @@ def ensure_server_running(server_cmd: list[str], server_url="http://127.0.0.1:56
         port = parsed_url.port or 5678
 
         server_proc = subprocess.Popen(
-            server_cmd + ["--port", str(port)],
+            server_cmd + ["--port", str(port), '--n-processes', str(n_processes)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True
@@ -54,7 +57,7 @@ def ensure_server_running(server_cmd: list[str], server_url="http://127.0.0.1:56
         while True:
             try:
                 with urlopen(f"{server_url}/jobs", timeout=1):
-                    print(f"Server is up! PID is: {server_proc.pid}")
+                    print(f"Server is up! PID: {server_proc.pid} N processes: {n_processes}")
                     return
             except URLError:
                 if time.time() - start > timeout:
@@ -125,6 +128,13 @@ def main():
         help="Jobrunner server URL",
     )
 
+    parser.add_argument(
+        "--n-processes",
+        default=10,
+        type=int,
+        help="Sets the limit of the number of processes, if it starts a new server.",
+    )
+
     args = parser.parse_args()
 
     jobs = []
@@ -149,7 +159,10 @@ def main():
         for job in jobs:
             job["cwd"] = cwd
 
-    ensure_server_running(SERVER_CMD, args.server, timeout=10)
+    ensure_server_running(SERVER_CMD,
+                          args.server,
+                          timeout=10,
+                          n_processes=args.n_processes)
 
     # Submit
     for job in jobs:
