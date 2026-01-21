@@ -190,6 +190,20 @@ class JobServer:
                         self.end_headers()
                         self.wfile.write(html)
                         return
+                    
+                    if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "logs":
+                        uid = parts[1]
+                        job = server.manager._all_jobs.get(uid)
+                        response = {'stdout': 'log not available',
+                                    'stderr': 'log not available'}
+                        if job and job._stdout_path:
+                            response['stdout'] = self._read_text_file(job._stdout_path)
+                        
+                        if job and job._stderr_path:
+                            response['stderr'] = self._read_text_file(job._stderr_path)
+                        
+                        self._json_response(200, response)
+                        return
 
                     if parsed.path == "/jobs":
                         jobs = {uid: {"status": state.status.name,
