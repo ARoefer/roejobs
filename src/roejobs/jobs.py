@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import shutil
 import tempfile
 import signal
 import time
@@ -98,6 +99,14 @@ class Job:
         return hash(self._hash)
 
     def start(self):
+        # A restarted job reuses this object; drop the previous run's temp dir
+        # so we don't orphan it (and its log files) on disk, and clear the
+        # stale process/return code so poll() can't report the old result.
+        if self._tmpdir is not None:
+            shutil.rmtree(self._tmpdir, ignore_errors=True)
+        self._proc = None
+        self._returncode = None
+
         self._tmpdir = Path(tempfile.mkdtemp(prefix="jobrunner_"))
         self._stdout_path = self._tmpdir / "stdout.log"
         self._stderr_path = self._tmpdir / "stderr.log"
@@ -175,7 +184,7 @@ class JobManager:
         return not any([s.status in {JobStatus.RUNNING, JobStatus.QUEUED} for s in self._job_state.values()])
 
     @property
-    def n_jobs_left(self) -> bool:
+    def n_jobs_left(self) -> int:
         return sum([int(s.status in {JobStatus.RUNNING, JobStatus.QUEUED}) for s in self._job_state.values()])
 
     def queue_job(self, job : Job):

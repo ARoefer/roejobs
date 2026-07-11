@@ -10,6 +10,7 @@ Roejobs is a local job scheduling and management tool designed for running, moni
 ## Features
 
 - Queue jobs from files or directly from the CLI.
+- Optionally wait for all queued jobs to finish and report their outcome (`--wait`).
 - Support for CWD=... prefixes per job or global override.
 - View running, queued, succeeded, failed, or cancelled jobs in a web browser.
 - Stream job stdout/stderr to log files and view them via the dashboard.
@@ -76,6 +77,7 @@ roejobs-cli tasks.txt
 Optional flags:
 - `--override-cwd — ignore CWD=...` in job specs and use the CLI's current working directory.
 - `--server` — point to a server on a custom port.
+- `--wait` — after queuing, block until all submitted jobs conclude, then print their final states and exit.
 
 ### 2. Inline submission
 
@@ -89,6 +91,18 @@ roejobs-cli --jobs "python quick_test.py" "CWD=./exp ./run.sh --config cfg.yaml"
 ### 3. Lazy server start
 
 If the server is not running, the CLI automatically launches it in the background on the correct port.
+
+### 4. Waiting for jobs to finish
+
+By default the CLI returns as soon as the jobs are queued. Pass `--wait` to block until every job it submitted reaches a terminal state (Succeeded, Failed, or Cancelled):
+
+```bash
+roejobs-cli --wait --jobs "python train.py --lr 0.01" "python eval.py"
+```
+
+When all jobs conclude, the CLI prints each job's final state and exits. The exit code is `0` only if **every** submitted job succeeded; if any job failed or was cancelled it exits `1`, which makes `--wait` convenient in scripts and pipelines.
+
+There is no timeout — job durations are hard to predict — but you can stop waiting at any time with `Ctrl+C`. Interrupting only stops the CLI from waiting; the jobs keep running on the server and can still be monitored from the dashboard.
 
 ## Job spec syntax
 

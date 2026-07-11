@@ -80,21 +80,28 @@ def submit_job(server_url, cmd, cwd):
     with urlopen(req) as resp:
         return json.loads(resp.read())
 
+TERMINAL_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 
-def submit_job(server_url, cmd, cwd):
-    payload = {"cmd": cmd}
-    if cwd is not None:
-        payload["cwd"] = str(cwd)
 
-    req = Request(
-        f"{server_url}/jobs",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-
-    with urlopen(req) as resp:
+def get_all_jobs(server_url):
+    with urlopen(f"{server_url}/jobs", timeout=5) as resp:
         return json.loads(resp.read())
+
+
+def wait_for_jobs(server_url, uids, poll_interval=1.0):
+    """Block until every uid in `uids` reaches a terminal state.
+
+    Returns a dict {uid: status}. Jobs the server does not (yet) know about
+    are treated as non-terminal so we keep polling for them.
+    """
+    uids = set(uids)
+    while True:
+        jobs = get_all_jobs(server_url)
+        statuses = {uid: jobs.get(uid, {}).get("status") for uid in uids}
+        if all(s in TERMINAL_STATES for s in statuses.values()):
+            return statuses
+        time.sleep(poll_interval)
+
 
 SERVER_CMD = ["python", "-m", "roejobs.server"]
 
@@ -120,6 +127,12 @@ def main():
         "--override-cwd",
         action="store_true",
         help="Ignore CWD=... and use current working directory",
+    )
+
+    parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="After queuing, block until all submitted jobs conclude, print their final states, and exit non-zero if any did not succeed.",
     )
 
     parser.add_argument(
@@ -165,12 +178,36 @@ def main():
                           n_processes=args.n_processes)
 
     # Submit
+    submitted = []
     for job in jobs:
         result = submit_job(
             args.server,
             cmd=job["cmd"],
             cwd=job["cwd"],
         )
+        submitted.append(result["uid"])
         cmd_str = " ".join(job["cmd"])
         cwd_str = f" (cwd={job['cwd']})" if job["cwd"] else ""
         print(f"Queued {result['uid']}: {cmd_str}{cwd_str}")
+
+    if not args.wait:
+        return
+
+    uids = set(submitted)
+    print(f"\nWaiting for {len(uids)} job(s) to conclude... (Ctrl+C to stop waiting)")
+    try:
+        statuses = wait_for_jobs(args.server, uids)
+    except KeyboardInterrupt:
+        print("\nStopped waiting. Jobs continue running on the server.")
+        raise SystemExit(130)
+
+    print("\nAll jobs concluded:")
+    for uid, status in statuses.items():
+        print(f"  {uid}: {status}")
+
+    if any(status != "SUCCEEDED" for status in statuses.values()):
+        raise SystemExit(1)
+
+
+if __name__ == '__main__':
+    main()
